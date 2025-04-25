@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Price Tracker</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <div class="top-bar">
+            <h1>Crypto Price Tracker</h1>
+            <div class="user-info">
+                <span>สวัสดี, <strong>{{ session['user_id'] }}</strong></span>
+                <a href="{{ url_for('logout') }}" class="btn-logout">ออกจากระบบ</a>
+            </div>
+        </div>
+
+        <div class="form-section">
+            <h2>เลือกเหรียญและราคาอ้างอิง</h2>
+            <select id="coinSelect">
+                {% for coin in coins %}
+                    <option value="{{ coin }}">{{ coin }}</option>
+                {% endfor %}
+            </select>
+            <input type="number" id="referencePrice" placeholder="ราคาอ้างอิง (USDT)">
+            <button onclick="addCoin()">เพิ่ม</button>
+        </div>
+
+        <div id="priceList" class="coin-list">
+            <!-- รายการเหรียญที่ผู้ใช้เลือกจะถูกแสดงที่นี่ -->
+        </div>
+
+        <footer class="credit">
+            พัฒนาโดย PUK @คัมภีร์สายกระบี่คริปโต
+        </footer>
+    </div>
+
+    <script>
+        const selectedCoins = [];
+
+        window.onload = function() {
+            // โหลดข้อมูลเหรียญที่เคยเลือก
+            fetch('/load_coins')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.length > 0) {
+                        data.forEach(item => {
+                            selectedCoins.push(item); // เก็บข้อมูลเหรียญที่โหลดมาจากฐานข้อมูล
+                        });
+                        updatePriceList(); // อัปเดตรายการเหรียญที่เลือกไว้
+                    }
+                })
+                .catch(err => console.error('Error loading coins:', err));
+        };
+
+        function addCoin() {
+            const select = document.getElementById('coinSelect');
+            const referencePriceInput = document.getElementById('referencePrice');
+            const coin = select.value;
+            const refPrice = parseFloat(referencePriceInput.value) || 0;
+
+            if (coin && !selectedCoins.some(c => c.coin === coin)) {
+                selectedCoins.push({ coin: coin, refPrice: refPrice });
+                referencePriceInput.value = '';
+                updatePriceList();
+                syncCoinsToServer(); // ส่งข้อมูลเหรียญไปเซิร์ฟเวอร์
+            }
+        }
+
+        function removeCoin(coin) {
+            const index = selectedCoins.findIndex(c => c.coin === coin);
+            if (index !== -1) {
+                selectedCoins.splice(index, 1);
+                updatePriceList();
+                syncCoinsToServer();
+            }
+        }
+
+        function updatePriceList() {
+            const priceList = document.getElementById('priceList');
+            priceList.innerHTML = '';
+
+            selectedCoins.forEach(({ coin, refPrice }) => {
+                fetch(`/get_price/${coin}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (!data.error) {
+                            const currentPrice = data.price;
+                            const priceDiff = currentPrice - refPrice;
+                            const percentDiff = refPrice ? (priceDiff / refPrice * 100) : 0;
+
+                            const diffClass = priceDiff >= 0 ? 'price-diff-positive' : 'price-diff-negative';
+
+                            const div = document.createElement('div');
+                            div.className = 'coin-item';
+                            div.innerHTML = `
+                                <div>
+                                    <strong>${data.symbol}</strong><br>
+                                    ราคาปัจจุบัน: ${currentPrice.toFixed(4)} USDT<br>
+                                    ราคาอ้างอิง: ${refPrice.toFixed(4)} USDT<br>
+                                    <span class="${diffClass}">
+                                        ส่วนต่าง: ${priceDiff >= 0 ? '+' : ''}${priceDiff.toFixed(4)} USDT (${percentDiff.toFixed(2)}%)
+                                    </span>
+                                </div>
+                                <button class="remove-btn" onclick="removeCoin('${coin}')">×</button>
+                            `;
+                            priceList.appendChild(div);
+                        }
+                    });
+            });
+        }
+
+        function syncCoinsToServer() {
+            fetch('/save_coins', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(selectedCoins)
+            })
+            .then(res => res.json())
+            .then(data => console.log('Coins saved:', data))
+            .catch(err => console.error('Error saving coins:', err));
+        }
+    </script>
+</body>
+</html>
